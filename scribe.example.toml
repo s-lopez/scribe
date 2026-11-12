@@ -1,0 +1,54 @@
+# scribe settings. Copy to scribe.toml (gitignored) and keep only what you change:
+#
+#     cp scribe.example.toml scribe.toml
+#
+# Every value below is the default. Relative paths are relative to the repo root.
+# Set SCRIBE_CONFIG to use a settings file somewhere else.
+
+# sessions_dir = "sessions"           # one folder per recording / file / text
+# refine_prompt = "prompts/refine.md"  # {vocabulary} is replaced with whisper.vocabulary
+# log_file = "logs/scribe.log"         # debug log
+# audio_bitrate = "64k"                # AAC bitrate for kept recordings
+
+[whisper]
+# Recurring names and jargon Whisper should spell correctly. Also given to the refiner as a
+# glossary. Keep it short.
+# vocabulary = "Kubernetes, PostgreSQL, Grafana, OpenTelemetry."
+
+# "auto" detects the language of each recording; set e.g. "en" or "es" to force one.
+# language = "auto"
+
+# model = "models/ggml-large-v3.bin"
+# vad_model = "models/ggml-silero-v5.1.2.bin"
+# audio_filter = "highpass=f=60,dynaudnorm=f=200:g=15"   # ffmpeg preprocessing
+# vad_min_speech_pad_ms = 200
+# vad_min_silence_ms = 500
+# max_context = 0          # 0: don't condition on previous text (avoids repetition loops)
+# temperature = 0.0
+# temperature_inc = 0.2
+# entropy_thold = 2.8
+# logprob_thold = -1.0
+# beam_size = 5
+# best_of = 5
+# threads = 8
+
+[ollama]
+# url = "http://127.0.0.1:11434"
+# model = "gemma4:12b"
+# temperature = 0.2
+# num_ctx = 32768          # context window; longer transcripts fail instead of being truncated
+# timeout_s = 600
+
+[claude]
+# model = "haiku"
+# timeout_s = 300
+
+[tools]
+# Found on $PATH and in the usual install locations (Homebrew, ~/.local/bin, MacPorts).
+# Set absolute paths only if yours live elsewhere.
+# ffmpeg = "/opt/homebrew/bin/ffmpeg"
+# whisper = "/opt/homebrew/bin/whisper-cli"
+# rec = "/opt/homebrew/bin/rec"
+# claude = "/opt/homebrew/bin/claude"
+# osascript = "/usr/bin/osascript"
+# pbcopy = "/usr/bin/pbcopy"

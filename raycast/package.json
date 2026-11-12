@@ -1,0 +1,63 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "scribe",
+  "title": "Scribe",
+  "description": "Dictate with local Whisper, review and edit the transcript, optionally refine it with Gemma or Claude, and paste it into the front app.",
+  "icon": "icon.png",
+  "author": "s-lopez",
+  "categories": [
+    "Productivity"
+  ],
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "dictate",
+      "title": "Dictate",
+      "subtitle": "Scribe",
+      "description": "Record from the microphone (Enter stops, Esc discards), review and edit the transcript, optionally refine it with Gemma or Claude, then paste.",
+      "mode": "view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "scribePath",
+      "title": "scribe Executable",
+      "description": "Path to the scribe CLI in your clone's virtualenv: <clone>/.venv/bin/scribe",
+      "type": "textfield",
+      "required": true,
+      "placeholder": "~/code/scribe/.venv/bin/scribe"
+    },
+    {
+      "name": "debug",
+      "title": "Debugging",
+      "label": "Show Debug Output",
+      "description": "Show scribe's live debug log in the Dictate window.",
+      "type": "checkbox",
+      "required": false,
+      "default": true
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^2.12.0"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.2.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "eslint": "^9.39.0",
+    "prettier": "^3.10.1",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "build": "ray build",
+    "dev": "ray develop",
+    "lint": "tsc --noEmit && eslint src && prettier --check src",
+    "fix-lint": "eslint --fix src && prettier --write src",
+    "lint:store": "ray lint"
+  },
+  "overrides": {
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.8"
+    }
+  }
+}
