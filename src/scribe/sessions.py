@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
@@ -126,3 +127,12 @@ def find(path: Path) -> Session | None:
         if candidate.is_dir() and (candidate / META).is_file():
             return Session(candidate)
     return None
+
+
+def remove(sessions_dir: Path, session: Session) -> None:
+    """Delete a session folder; refuses anything outside sessions_dir."""
+    root = sessions_dir.resolve()
+    path = session.path.resolve()
+    if path.parent != root:
+        raise ValueError(f"{path} is not a session in {root}")
+    shutil.rmtree(path)

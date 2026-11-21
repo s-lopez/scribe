@@ -5,6 +5,7 @@ import {
   Detail,
   Form,
   Icon,
+  Keyboard,
   Toast,
   closeMainWindow,
   getPreferenceValues,
@@ -23,6 +24,10 @@ import { useEffect, useRef, useState } from "react";
 //   3. `scribe refine --stdin --json <session>` refines the (edited) transcript into a second
 //      editable field, which can then be pasted.
 //   4. `scribe pasted <session>` keeps whatever was finally pasted in the session.
+//
+// "Save session" (checkbox, ⌘S; default from the preference) off: the session folder is deleted
+// when the window closes. Mid-transcription that is a "forget" line to `scribe dictate`, which
+// deletes it once done; afterwards it is `scribe forget <session>`.
 //
 // Debugging: scribe runs with --verbose; its log lines are console.logged (see `npm run dev`),
 // shown when the "Show Debug Output" preference is on, and kept for error views.
@@ -49,7 +54,7 @@ type Phase =
   | { phase: "review"; session: string }
   | { phase: "error"; message: string; session?: string };
 
-type Preferences = { scribePath: string; debug?: boolean };
+type Preferences = { scribePath: string; debug?: boolean; saveSessions?: boolean };
 
 const BACKEND_LABEL: Record<Backend, string> = { ollama: "Gemma (local)", claude: "Claude Haiku" };
 const DEBUG_LINES = 40;
@@ -93,7 +98,7 @@ function parseLine<T>(line: string): T | null {
 }
 
 export default function Command() {
-  const { debug } = getPreferenceValues<Preferences>();
+  const { debug, saveSessions = true } = getPreferenceValues<Preferences>();
   const [view, setView] = useState<Phase>({ phase: "starting" });
   const [now, setNow] = useState(Date.now());
   const [transcript, setTranscript] = useState("");
@@ -102,6 +107,11 @@ export default function Command() {
   const [refineError, setRefineError] = useState<string | null>(null);
   const [stderrLines, setStderrLines] = useState<string[]>([]);
   const [logPath, setLogPath] = useState(defaultLogPath());
+  const [keep, setKeepState] = useState(saveSessions);
+  // Refs, because teardown runs from the first render's closure.
+  const keepRef = useRef(saveSessions);
+  const session = useRef<string | null>(null);
+  const forgotten = useRef(false);
   const child = useRef<ChildProcessWithoutNullStreams | null>(null);
   const refiner = useRef<ChildProcessWithoutNullStreams | null>(null);
   const stopped = useRef(false);
@@ -117,9 +127,27 @@ export default function Command() {
     });
   }
 
-  function fail(message: string, session?: string) {
+  function fail(message: string, sessionPath?: string) {
     finished.current = true;
-    setView({ phase: "error", message, session });
+    setView({ phase: "error", message, session: sessionPath });
+  }
+
+  function setKeep(value: boolean) {
+    keepRef.current = value;
+    setKeepState(value);
+  }
+
+  // Delete the session folder now (scribe dictate must be done with it).
+  function forgetSession() {
+    const path = session.current;
+    if (!path || forgotten.current) return;
+    forgotten.current = true;
+    const result = spawnSync(scribePath(), ["--verbose", "forget", path], {
+      env: { ...process.env, PATH },
+      timeout: 5000,
+      encoding: "utf-8",
+    });
+    debugLog("session forgotten", { path, status: result.status, error: result.error?.message });
   }
 
   // ---- 1. record + transcribe ------------------------------------------------------------
@@ -156,6 +184,7 @@ export default function Command() {
       if (!ev) return;
       switch (ev.event) {
         case "recording":
+          session.current = ev.session;
           if (ev.log) setLogPath(ev.log);
           setView({ phase: "recording", since: Date.now() });
           break;
@@ -170,11 +199,13 @@ export default function Command() {
           break;
         case "transcribed":
           finished.current = true;
+          session.current = ev.session;
           setTranscript(ev.text);
           setView({ phase: "review", session: ev.session });
           break;
         case "error":
           if (ev.log) setLogPath(ev.log);
+          if (ev.session) session.current = ev.session;
           fail(ev.message, ev.session);
           break;
         case "discarded":
@@ -264,7 +295,10 @@ export default function Command() {
       return;
     }
     cancelRefine();
-    if (view.phase === "review") {
+    if (view.phase === "review" && !keepRef.current) {
+      // Here rather than in teardown: Raycast may not unmount cleanly once the window closes.
+      forgetSession();
+    } else if (view.phase === "review") {
       // Synchronous (~0.2 s) so it completes before Raycast closes the window.
       const result = spawnSync(scribePath(), ["--verbose", "pasted", view.session, "--origin", origin], {
         input: text,
@@ -285,12 +319,19 @@ export default function Command() {
   function teardown() {
     const proc = child.current;
     debugLog("unmount", { pid: proc?.pid, stopped: stopped.current, exitCode: proc?.exitCode });
+    const wasFinished = finished.current;
     finished.current = true;
     cancelRefine();
     if (!proc) return;
     // Esc (or closing the window) while still recording discards the recording.
     if (!stopped.current && proc.exitCode === null) proc.stdin.write("discard\n");
+    else if (!keepRef.current && !wasFinished && proc.exitCode === null) {
+      // Still transcribing: scribe deletes the session itself once it is done.
+      proc.stdin.write("forget\n");
+      forgotten.current = true;
+    }
     proc.stdin.end();
+    if (!keepRef.current && wasFinished) forgetSession();
   }
 
   useEffect(() => {
@@ -321,6 +362,17 @@ export default function Command() {
 
   // ---- views ------------------------------------------------------------------------------
 
+  const saveAction = (
+    <Action
+      title={keep ? "Don't Save Session" : "Save Session"}
+      icon={keep ? Icon.Trash : Icon.SaveDocument}
+      shortcut={Keyboard.Shortcut.Common.Save}
+      onAction={() => setKeep(!keep)}
+    />
+  );
+  const saveLine = keep
+    ? "💾 Session will be saved  ·  **⌘S** don't save"
+    : "🗑️ Session won't be saved  ·  **⌘S** save it";
   const debugSection = debug ? `\n\n---\n\n**Debug output**\n\n${codeBlock(stderrLines.slice(-15))}` : "";
   const logActions = (
     <ActionPanel.Section title="Debug">
@@ -336,6 +388,7 @@ export default function Command() {
         markdown={[
           "# ⚠️ Scribe failed",
           codeBlock([view.message]),
+          ...(view.session ? [saveLine] : []),
           `**Debug output** (full log: \`${logPath}\`)`,
           codeBlock(stderrLines),
         ].join("\n\n")}
@@ -343,6 +396,7 @@ export default function Command() {
           <ActionPanel>
             {logActions}
             {view.session ? <Action.ShowInFinder title="Show Session in Finder" path={view.session} /> : null}
+            {view.session ? saveAction : null}
             <Action title="Close" icon={Icon.XMarkCircle} onAction={() => closeMainWindow()} />
           </ActionPanel>
         }
@@ -356,6 +410,8 @@ export default function Command() {
       "",
       "**↵** Stop and transcribe  ",
       "**Esc** Discard",
+      "",
+      saveLine,
     ].join("\n");
     return (
       <Detail
@@ -364,6 +420,7 @@ export default function Command() {
         actions={
           <ActionPanel>
             <Action title="Stop and Transcribe" icon={Icon.Stop} onAction={stopRecording} />
+            {saveAction}
             {logActions}
           </ActionPanel>
         }
@@ -410,7 +467,10 @@ export default function Command() {
             ) : null}
             {pasteTranscript}
             <ActionPanel.Section title="Refine">{refineActions}</ActionPanel.Section>
-            <Action.ShowInFinder title="Show Session in Finder" path={view.session} />
+            <ActionPanel.Section title="Session">
+              {saveAction}
+              <Action.ShowInFinder title="Show Session in Finder" path={view.session} />
+            </ActionPanel.Section>
             {logActions}
           </ActionPanel>
         }
@@ -434,6 +494,14 @@ export default function Command() {
           }
         />
         {refineError ? <Form.Description title="Refinement failed" text={refineError} /> : null}
+        <Form.Checkbox
+          id="save"
+          title="Session"
+          label="Save audio, transcript and refinements to disk"
+          value={keep}
+          onChange={setKeep}
+          info="Off: the session folder is deleted when this window closes. Toggle with ⌘S."
+        />
         <Form.Description
           text={
             hasRefined
@@ -454,8 +522,13 @@ export default function Command() {
     <Detail
       navigationTitle="Scribe"
       isLoading
-      markdown={`# ⏳ ${label}${debugSection}`}
-      actions={<ActionPanel>{logActions}</ActionPanel>}
+      markdown={`# ⏳ ${label}${view.phase === "transcribing" ? `\n\n${saveLine}` : ""}${debugSection}`}
+      actions={
+        <ActionPanel>
+          {view.phase === "transcribing" ? saveAction : null}
+          {logActions}
+        </ActionPanel>
+      }
     />
   );
 }

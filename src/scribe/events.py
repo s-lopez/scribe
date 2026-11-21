@@ -9,6 +9,17 @@ from typing import Any
 
 from scribe.debuglog import log
 
+# Fields holding dictated or refined text: logged by size only, so logs/scribe.log keeps no content.
+_TEXT_FIELDS = ("text",)
+
+
+def _redacted(event: str, data: dict[str, Any]) -> str:
+    shown = {
+        k: f"<{len(v)} chars>" if k in _TEXT_FIELDS and isinstance(v, str) else v
+        for k, v in data.items()
+    }
+    return json.dumps({"event": event, **shown}, ensure_ascii=False)
+
 
 class Emitter:
     """JSON lines on stdout; silently stops if the reader went away."""
@@ -18,7 +29,7 @@ class Emitter:
 
     def emit(self, event: str, **data: Any) -> None:
         payload = json.dumps({"event": event, **data}, ensure_ascii=False)
-        log.debug("emit %s", payload[:300])
+        log.debug("emit %s", _redacted(event, data)[:300])
         if not self.alive:
             log.debug("emit skipped: reader is gone")
             return

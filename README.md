@@ -10,7 +10,7 @@ Local dictation and audio transcription for macOS, with optional cleanup of the 
   - `claude`: [Claude Code](https://code.claude.com/docs/en/setup) with Haiku, using your own Claude subscription
     (see [Privacy](#privacy)).
 - **Every run is kept** in a timestamped session folder: audio, raw transcript, edits, every refinement and
-  metadata.
+  metadata. For dictation you can turn this off per recording (see [Saving sessions](#saving-sessions)).
 
 There is one pipeline and three ways in:
 
@@ -145,6 +145,15 @@ Press the hotkey: a Raycast window opens and recording starts right away.
 
 All actions are also in the action panel (`⌘ K`). Whatever you paste stays on the clipboard and is saved in the
 session as `pasted.<ts>.txt`.
+
+### Saving sessions
+
+The Dictate window has a *Save session* checkbox (`⌘ S` toggles it in every phase, also while recording or
+transcribing). When it is off, the session folder is deleted as soon as the window closes: after pasting, on
+`Esc`, or when transcription finishes if you closed the window before that. The *Save Sessions by Default*
+preference of the extension sets its initial state (on by default). The debug log in `logs/` is kept either
+way, but it never contains dictated or refined text, only its length.
+`scribe forget <session>` deletes a session from the command line.
 
 ## Shortcuts: share sheet and Finder Quick Actions
 

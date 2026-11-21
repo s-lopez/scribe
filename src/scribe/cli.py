@@ -3,6 +3,7 @@
 scribe transcribe FILE... [--refine ollama|claude | --ask] [--background] [--copy]
 scribe refine PATH...     [--backend ollama|claude | --ask] [--background] [--copy]
 scribe dictate            (used by the Raycast extension; JSON lines over stdin/stdout)
+scribe forget SESSION     delete a session folder (Raycast, when saving is turned off)
 """
 
 from __future__ import annotations
@@ -241,6 +242,20 @@ def cmd_pasted(settings: Settings, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_forget(settings: Settings, args: argparse.Namespace) -> int:
+    session = sessions.find(args.session)
+    if session is None:
+        print(f"error: not a session: {args.session}", file=sys.stderr)
+        return 1
+    try:
+        sessions.remove(settings.sessions_dir, session)
+    except (ValueError, OSError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    debuglog.log.info("forgot session %s", session.path)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="scribe", description=__doc__.split("\n\n")[0])
     parser.add_argument(
@@ -282,6 +297,10 @@ def build_parser() -> argparse.ArgumentParser:
     k.add_argument("session", type=Path)
     k.add_argument("--origin", default="transcript", help="which text it came from")
     k.set_defaults(func=cmd_pasted)
+
+    f = sub.add_parser("forget", help="delete a session folder and everything in it")
+    f.add_argument("session", type=Path)
+    f.set_defaults(func=cmd_forget)
 
     d = sub.add_parser("dictate", help="record from the microphone (JSON protocol for Raycast)")
     d.set_defaults(func=lambda settings, args: dictate.run(settings))

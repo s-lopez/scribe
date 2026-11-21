@@ -14,7 +14,9 @@ Protocol (one JSON object per stdout line)::
     -> {"event": "transcribed", "text": "...", "session": "<path>"}
     -> {"event": "error", "message": "...", "log": "<debug log path>"}
 
-Once stopped, the session is always processed to the end, even if the caller goes away.
+Once stopped, the session is always processed to the end, even if the caller goes away. A
+"forget" line sent after "stop" (e.g. the window was closed mid-transcription with saving
+turned off) deletes the session folder once processing is done.
 Every step is written to the debug log (settings.log_file).
 """
 
@@ -55,8 +57,8 @@ def parse_command(line: str) -> str:
     raise ValueError(f"Unknown command {command!r}")
 
 
-def _wait_for_command(recorder: Recorder) -> str:
-    """Block until a stdin command arrives; EOF means discard."""
+def _wait_for_command(recorder: Recorder) -> tuple[str, bytes]:
+    """Block until a stdin command arrives; EOF means discard. Returns it and any unread input."""
     buffer = b""
     fd = sys.stdin.fileno()
     while True:
@@ -75,7 +77,23 @@ def _wait_for_command(recorder: Recorder) -> str:
         while b"\n" in buffer:
             line, buffer = buffer.split(b"\n", 1)
             if line.strip():
-                return parse_command(line.decode())
+                return parse_command(line.decode()), buffer
+
+
+def _forget_requested(pending: bytes) -> bool:
+    """Whether a "forget" line arrived after "stop", without blocking on stdin."""
+    data = pending
+    fd = sys.stdin.fileno()
+    try:
+        while select.select([fd], [], [], 0)[0]:
+            chunk = os.read(fd, 1024)
+            if not chunk:
+                break
+            data += chunk
+    except OSError as e:
+        log.debug("stdin unreadable after processing: %s", e)
+    log.debug("stdin after stop %r", data)
+    return any(line.strip() == b"forget" for line in data.split(b"\n"))
 
 
 def wav_duration(path: Path) -> float | None:
@@ -120,7 +138,7 @@ def _run(settings: Settings) -> int:
         recorder.start()
         log.info("recorder started pid=%s cmd=%s", recorder.pid, recorder.command)
         out.emit("recording", session=str(session.path), log=str(settings.log_file))
-        command = _wait_for_command(recorder)
+        command, pending = _wait_for_command(recorder)
         log.info("command %s", command)
         if command == "discard":
             raise _Discard("discard command")
@@ -150,7 +168,11 @@ def _run(settings: Settings) -> int:
         size,
         recorder.error(),
     )
-    return process(settings, session, wav, out, reporter)
+    status = process(settings, session, wav, out, reporter)
+    if _forget_requested(pending):
+        log.info("forget requested: deleting %s", session.path)
+        shutil.rmtree(session.path, ignore_errors=True)
+    return status
 
 
 def process(

@@ -94,3 +94,15 @@ def test_debug_log_records_the_session(
     text = settings.log_file.read_text()
     for expected in ("stdin=", "recorder started", "stdin read b'stop", "transcribed", "emit"):
         assert expected in text
+    # The transcript itself never reaches the debug log, only its size.
+    assert "hello there" not in text
+    assert '"text": "<32 chars>"' in text
+
+
+def test_forget_after_stop_deletes_the_session(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, events = _run_dictation(settings, monkeypatch, capsys, "stop\nforget")
+    assert code == 0
+    assert events[-1]["event"] == "transcribed"
+    assert not [p for p in settings.sessions_dir.iterdir() if p.is_dir()]

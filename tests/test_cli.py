@@ -145,6 +145,10 @@ def test_refine_edited_text_from_stdin(
     assert len(edited) == 1
     assert session.meta()["runs"][-1]["input"] == edited[0].name
     assert Path(done["output"]).read_text().strip() == "UM HELLO THERE, EDITED"
+    log_text = settings.log_file.read_text()
+    assert '"event": "refined"' in log_text
+    assert '"text": "<22 chars>"' in log_text
+    assert "hello THERE" not in log_text and "HELLO THERE" not in log_text
 
 
 def test_refine_unedited_text_uses_transcript(
@@ -191,3 +195,19 @@ def test_pasted_text_is_kept(
     assert pasted[0].read_text() == "Final, hand-edited text.\n"
     run = session.meta()["runs"][-1]
     assert run["step"] == "paste" and run["origin"] == "refined"
+
+
+def test_forget_deletes_the_session(
+    settings: Settings, audio_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    session = _transcribed_session(settings, audio_file, capsys)
+    assert cli.main(["forget", str(session.path)], settings) == 0
+    assert not session.path.exists()
+
+
+def test_forget_refuses_folders_outside_sessions(settings: Settings, tmp_path: Path) -> None:
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "meta.json").write_text("{}")
+    assert cli.main(["forget", str(outside)], settings) == 1
+    assert outside.exists()
